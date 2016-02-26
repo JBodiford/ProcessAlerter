@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Management;
+using System.Configuration;
 
 namespace ProcessAlerter
 {
@@ -22,6 +23,8 @@ namespace ProcessAlerter
         }
     }
 
+   
+
     internal class Monitor
     {
         private static ILog _logger = LogManager.GetLogger("ImportMonitor");
@@ -32,7 +35,7 @@ namespace ProcessAlerter
             var timer = new System.Timers.Timer();
 
             timer.AutoReset = true;
-            timer.Interval = 5 * 1000;  //TODO this should be a configkey
+            timer.Interval = Convert.ToInt32(ConfigurationManager.AppSettings["TimerInterval"]);
             timer.Elapsed += OnTimedEvent;
 
             timer.Start();
@@ -44,7 +47,7 @@ namespace ProcessAlerter
             _logger.Debug("outtaControls: " + outtaControls.Count);
             try
             {
-                string wmiQuery = "select * from Win32_Process where Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'"; // procname should be a configkey
+                string wmiQuery = "select * from Win32_Process where Name='Chrome.exe'"; //Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'" // procname should be a configkey
                 using (var searcher = new ManagementObjectSearcher(wmiQuery))
                 using (var retObjectCollection = searcher.Get())
                 {
