@@ -23,7 +23,7 @@ namespace ProcessAlerter
         }
     }
 
-   
+
 
     internal class Monitor
     {
@@ -35,7 +35,15 @@ namespace ProcessAlerter
             var timer = new System.Timers.Timer();
 
             timer.AutoReset = true;
-            timer.Interval = Convert.ToInt32(ConfigurationManager.AppSettings["TimerInterval"]);
+            var timerInterval = ConfigurationManager.AppSettings["TimerInterval"];
+            if (timerInterval == null)
+            {
+                timer.Interval = 5000;
+            }
+            else
+            {
+                timer.Interval = Convert.ToInt32(timerInterval);
+            }
             timer.Elapsed += OnTimedEvent;
 
             timer.Start();
@@ -47,7 +55,13 @@ namespace ProcessAlerter
             _logger.Debug("outtaControls: " + outtaControls.Count);
             try
             {
-                string wmiQuery = "select * from Win32_Process where Name='Chrome.exe'"; //Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'" // procname should be a configkey
+                string wmiQuery = "select * from Win32_Process where "; //Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'" // procname should be a configkey
+                var procName = ConfigurationManager.AppSettings["ProcName"].Split(';');
+                foreach (var proc in procName)
+                {
+                    wmiQuery += "Name= '" + proc + "' or";
+                }
+                wmiQuery.TrimEnd(new char[3] { ' ', 'o', 'r' });
                 using (var searcher = new ManagementObjectSearcher(wmiQuery))
                 using (var retObjectCollection = searcher.Get())
                 {
@@ -82,7 +96,7 @@ namespace ProcessAlerter
 
                         if (startTime.AddMinutes(1) < DateTime.Now
                             && !string.IsNullOrEmpty(processOwner)
-                            && processOwner.StartsWith("NT AUTHORITY", StringComparison.InvariantCultureIgnoreCase))  //TODO why is SYSTEM getting past this?
+                            && processOwner.StartsWith("NT AUTHORITY", StringComparison.InvariantCultureIgnoreCase))
                         {
                             if (!alreadyRunning)
                             {
@@ -104,7 +118,7 @@ namespace ProcessAlerter
                         retObject.Dispose();
                     }
                     //zap any outtacontrols that aren't running
-                    foreach(var keyValuePair in outtaControls)
+                    foreach (var keyValuePair in outtaControls)
                     {
                         DateTime dummy = new DateTime();
                         if (!currentlyRunning.ContainsKey(keyValuePair.Key))
