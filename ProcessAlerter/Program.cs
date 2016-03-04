@@ -22,9 +22,6 @@ namespace ProcessAlerter
             Console.ReadLine(); //TODO take this out once this is a service, just here for debugging
         }
     }
-
-
-
     internal class Monitor
     {
         private static ILog _logger = LogManager.GetLogger("ImportMonitor");
