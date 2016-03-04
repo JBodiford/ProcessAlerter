@@ -44,71 +44,50 @@ namespace ProcessAlerter
             _logger.Debug("outtaControls: " + outtaControls.Count);
             try
             {
-                string wmiQuery = "select * from Win32_Process where Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'"; // procname should be a configkey
-                using (var searcher = new ManagementObjectSearcher(wmiQuery))
-                using (var retObjectCollection = searcher.Get())
+                var currentlyRunning = new Dictionary<string, DateTime>();
+                foreach (var process in GetProcesses())
                 {
-                    var currentlyRunning = new Dictionary<string, DateTime>();
-                    foreach (ManagementObject retObject in retObjectCollection)
+                    var arrayOfCommands = process.CommandLine.Split(' ');
+                    var boardArg = arrayOfCommands[1].Trim(new char[3] { '-', ':', 'b' });
+
+                    string key = String.Concat(process.Name, boardArg);
+                    string dummyresult = String.Concat(process.Name, boardArg);
+
+                    currentlyRunning.Add(key, process.StartTime);
+
+                    DateTime currentStartTime = new DateTime();
+                    bool alreadyRunning = outtaControls.TryGetValue(key, out currentStartTime);
+
+                    if (process.StartTime.AddMinutes(1) < DateTime.Now
+                        && !string.IsNullOrEmpty(process.Owner)
+                        && process.Owner.StartsWith("NT AUTHORITY", StringComparison.InvariantCultureIgnoreCase))  //TODO why is SYSTEM getting past this?
                     {
-                        var uglyStartTime = retObject.GetPropertyValue("CreationDate");
-                        var startTime = ManagementDateTimeConverter.ToDateTime(uglyStartTime.ToString());
-                        var commandLine = retObject.GetPropertyValue("CommandLine").ToString();
-                        var processName = retObject.GetPropertyValue("Name").ToString();
-                        string processOwner = "";
-
-                        var arrayOfCommands = commandLine.Split(' ');
-                        var boardArg = arrayOfCommands[1].Trim(new char[3] { '-', ':', 'b' });
-
-                        string[] argList = new string[] { string.Empty, string.Empty };
-                        int returnVal = Convert.ToInt32(retObject.InvokeMethod("GetOwner", argList));
-                        if (returnVal == 0)
+                        if (!alreadyRunning)
                         {
-                            processOwner = argList[1] + "\\" + argList[0];
+                            _logger.ErrorFormat("Process {0} Board ID {1} is OUTTA CONTROL!!!", process.Name, boardArg);
+                            _logger.DebugFormat("Adding key {0} to bag", key);
+                            outtaControls.TryAdd(key, process.StartTime);
                         }
+                        else if (currentStartTime != process.StartTime)
+                            _logger.ErrorFormat("Holy shit Batman, process {0} Board {1} has MULTIPLE FUCKING INSTANCES RUNNING!!!!", process.Name, boardArg);
                         else
-                            _logger.WarnFormat("Failed to fetch process owner for Process {0} {1}", processName, commandLine);
-
-                        string key = String.Concat(processName, boardArg);
-                        string dummyresult = String.Concat(processName, boardArg);
-
-                        currentlyRunning.Add(key, startTime);
-
-                        DateTime currentStartTime = new DateTime();
-                        bool alreadyRunning = outtaControls.TryGetValue(key, out currentStartTime);
-
-                        if (startTime.AddMinutes(1) < DateTime.Now
-                            && !string.IsNullOrEmpty(processOwner)
-                            && processOwner.StartsWith("NT AUTHORITY", StringComparison.InvariantCultureIgnoreCase))  //TODO why is SYSTEM getting past this?
-                        {
-                            if (!alreadyRunning)
-                            {
-                                _logger.ErrorFormat("Process {0} Board ID {1} is OUTTA CONTROL!!!", processName, boardArg);
-                                _logger.DebugFormat("Adding key {0} to bag", key);
-                                outtaControls.TryAdd(key, startTime);
-                            }
-                            else if (currentStartTime != startTime)
-                                _logger.ErrorFormat("Holy shit Batman, process {0} Board {1} has MULTIPLE FUCKING INSTANCES RUNNING!!!!", processName, boardArg);
-                            else
-                                _logger.WarnFormat("Process {0} Board ID {1} is STILL OUTTA CONTROL!", processName, boardArg);
-                        }
-                        else
-                        {
-                            _logger.DebugFormat("Process {0} Board ID {1} looks good", processName, boardArg);
-                            if (alreadyRunning)
-                                outtaControls.TryRemove(key, out currentStartTime);
-                        }
-                        retObject.Dispose();
+                            _logger.WarnFormat("Process {0} Board ID {1} is STILL OUTTA CONTROL!", process.Name, boardArg);
                     }
-                    //zap any outtacontrols that aren't running
-                    foreach(var keyValuePair in outtaControls)
+                    else
                     {
-                        DateTime dummy = new DateTime();
-                        if (!currentlyRunning.ContainsKey(keyValuePair.Key))
-                        {
-                            outtaControls.TryRemove(keyValuePair.Key, out dummy);
-                            _logger.WarnFormat("Process {0} managed to get it's shit under control", keyValuePair.Key);
-                        }
+                        _logger.DebugFormat("Process {0} Board ID {1} looks good", process.Name, boardArg);
+                        if (alreadyRunning)
+                            outtaControls.TryRemove(key, out currentStartTime);
+                    }
+                }
+                //zap any outtacontrols that aren't running
+                foreach (var keyValuePair in outtaControls)
+                {
+                    DateTime dummy = new DateTime();
+                    if (!currentlyRunning.ContainsKey(keyValuePair.Key))
+                    {
+                        outtaControls.TryRemove(keyValuePair.Key, out dummy);
+                        _logger.WarnFormat("Process {0} managed to get it's shit under control", keyValuePair.Key);
                     }
                 }
             }
@@ -118,6 +97,39 @@ namespace ProcessAlerter
             }
 
             _logger.Debug("Event handler completed");
+        }
+
+        private static List<Process> GetProcesses()
+        {
+            List<Process> retVal = new List<Process>();
+            string wmiQuery = "select * from Win32_Process where Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'"; // procname should be a configkey
+            using (var searcher = new ManagementObjectSearcher(wmiQuery))
+            using (var wmiObjects = searcher.Get())
+            {
+                foreach (ManagementObject wmiObject in wmiObjects)
+                {
+                    var process = new Process();
+                    var uglyStartTime = wmiObject.GetPropertyValue("CreationDate");
+                    process.StartTime = ManagementDateTimeConverter.ToDateTime(uglyStartTime.ToString());
+                    process.CommandLine = wmiObject.GetPropertyValue("CommandLine").ToString();
+                    process.Name = wmiObject.GetPropertyValue("Name").ToString();
+
+                    string[] argList = new string[] { string.Empty, string.Empty };
+                    int returnVal = Convert.ToInt32(wmiObject.InvokeMethod("GetOwner", argList));
+                    if (returnVal == 0)
+                    {
+                        process.Owner = argList[1] + "\\" + argList[0];
+                    }
+                    else
+                    {
+                        process.Owner = "";
+                        _logger.WarnFormat("Failed to fetch process owner for Process {0} {1}", processName, commandLine);
+                    }
+                    retVal.Add(process);
+                    wmiObject.Dispose();
+                }
+            }
+            return retVal;
         }
     }
 }
