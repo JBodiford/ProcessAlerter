@@ -52,7 +52,6 @@ namespace ProcessAlerter
             _logger.Debug("outtaControls: " + outtaControls.Count);
             try
             {
-                
                 var currentlyRunning = new Dictionary<string, DateTime>();
                 foreach (var process in GetProcesses())
                 {
@@ -69,7 +68,7 @@ namespace ProcessAlerter
 
                     if (process.StartTime.AddMinutes(1) < DateTime.Now
                         && !string.IsNullOrEmpty(process.Owner)
-                        && processOwner.StartsWith("NT AUTHORITY", StringComparison.InvariantCultureIgnoreCase))
+                        && process.Owner.StartsWith("NT AUTHORITY", StringComparison.InvariantCultureIgnoreCase))
                     {
                         if (!alreadyRunning)
                         {
