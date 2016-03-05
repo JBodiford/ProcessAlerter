@@ -110,7 +110,7 @@ namespace ProcessAlerter
         private static List<Process> GetProcesses()
         {
             List<Process> retVal = new List<Process>();
-			string wmiQuery = "select * from Win32_Process where Name='BoomTown.ImportMLS.exe' or Name='BoomTown.DataImport.Photos.exe'"; // procname should be a configkey
+			string wmiQuery = "select * from Win32_Process where ";
             var procName = ConfigurationManager.AppSettings["ProcName"].Split(';');
             foreach (var proc in procName)
             {
@@ -138,7 +138,7 @@ namespace ProcessAlerter
                     else
                     {
                         process.Owner = "";
-                        _logger.WarnFormat("Failed to fetch process owner for Process {0} {1}", processName, commandLine);
+                        _logger.WarnFormat("Failed to fetch process owner for Process {0} {1}", process.Name, process.CommandLine);
                     }
                     retVal.Add(process);
                     wmiObject.Dispose();
