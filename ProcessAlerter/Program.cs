@@ -2,34 +2,46 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Management;
 using System.Configuration;
+using Topshelf;
 
 namespace ProcessAlerter
 {
     class Program
     {
-        //TODO test run on a server
-        //TODO set up TopShelf so it runs as a service
-
         static void Main(string[] args)
         {
             log4net.Config.XmlConfigurator.Configure();
 
-            var instance = new Monitor();
-            instance.Go();
-
-            Console.ReadLine(); //TODO take this out once this is a service, just here for debugging
+            HostFactory.Run(x =>
+            {
+                x.Service<Monitor>(s =>
+                {
+                    s.ConstructUsing(name => new Monitor());
+                    s.WhenStarted(m => m.Go());
+                    s.WhenStopped(m => m.Stop());
+                });
+                x.SetServiceName("ProcessAlerter");
+                x.SetDescription("Monitors running processes and alerts via log4net");
+                x.SetDisplayName("Process Alerter");
+                x.RunAsLocalSystem();
+            });
         }
     }
     internal class Monitor
     {
         private static ILog _logger = LogManager.GetLogger("ImportMonitor");
         private static ConcurrentDictionary<string, DateTime> outtaControls = new ConcurrentDictionary<string, DateTime>();
-
+        private static System.Timers.Timer timer = new System.Timers.Timer();
+        private static string wmiQuery;
         public void Go()
         {
-            var timer = new System.Timers.Timer();
+            wmiQuery = "select * from Win32_Process where ";
+            var procName = ConfigurationManager.AppSettings["ProcName"].Split(';');
+
+            wmiQuery += "Name=" + String.Join(" or Name=", procName.Select(x => "'" + x + "'"));
 
             timer.AutoReset = true;
             var timerInterval = ConfigurationManager.AppSettings["TimerInterval"];
@@ -44,6 +56,12 @@ namespace ProcessAlerter
             timer.Elapsed += OnTimedEvent;
 
             timer.Start();
+        }
+
+        public void Stop()
+        {
+            timer.Stop();
+            timer.Dispose();
         }
 
         private static void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
@@ -110,14 +128,7 @@ namespace ProcessAlerter
         private static List<Process> GetProcesses()
         {
             List<Process> retVal = new List<Process>();
-			string wmiQuery = "select * from Win32_Process where ";
-            var procName = ConfigurationManager.AppSettings["ProcName"].Split(';');
-            foreach (var proc in procName)
-            {
-                wmiQuery += "Name= '" + proc + "' or";
-            }
-            wmiQuery.TrimEnd(new char[3] { ' ', 'o', 'r' });
-			
+            
             using (var searcher = new ManagementObjectSearcher(wmiQuery))
             using (var wmiObjects = searcher.Get())
             {
