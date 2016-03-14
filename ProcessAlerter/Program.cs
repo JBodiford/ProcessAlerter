@@ -32,7 +32,7 @@ namespace ProcessAlerter
     }
     internal class Monitor
     {
-        private static ILog _logger = LogManager.GetLogger("ImportMonitor");
+        private static ILog _logger = LogManager.GetLogger("ProcessAlerter");
         private static ConcurrentDictionary<string, DateTime> outtaControls = new ConcurrentDictionary<string, DateTime>();
         private static System.Timers.Timer timer = new System.Timers.Timer();
         private static string wmiQuery;
