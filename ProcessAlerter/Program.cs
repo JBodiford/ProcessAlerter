@@ -20,7 +20,7 @@ namespace ProcessAlerter
                 x.Service<Monitor>(s =>
                 {
                     s.ConstructUsing(name => new Monitor());
-                    s.WhenStarted(m => m.Go());
+                    s.WhenStarted(m => m.Start());
                     s.WhenStopped(m => m.Stop());
                 });
                 x.SetServiceName("ProcessAlerter");
@@ -36,23 +36,21 @@ namespace ProcessAlerter
         private static ConcurrentDictionary<string, DateTime> outtaControls = new ConcurrentDictionary<string, DateTime>();
         private static System.Timers.Timer timer = new System.Timers.Timer();
         private static string wmiQuery;
-        public void Go()
+        private static int _timerInterval = 5000;
+        public void Start()
         {
             wmiQuery = "select * from Win32_Process where ";
             var procName = ConfigurationManager.AppSettings["ProcName"].Split(';');
 
             wmiQuery += "Name=" + String.Join(" or Name=", procName.Select(x => "'" + x + "'"));
 
-            timer.AutoReset = true;
+            timer.AutoReset = false;
+
             var timerInterval = ConfigurationManager.AppSettings["TimerInterval"];
-            if (timerInterval == null)
-            {
-                timer.Interval = 5000;
-            }
-            else
-            {
-                timer.Interval = Convert.ToInt32(timerInterval);
-            }
+            if (!String.IsNullOrEmpty(timerInterval))
+                _timerInterval = Convert.ToInt32(timerInterval);
+
+            timer.Interval = _timerInterval;
             timer.Elapsed += OnTimedEvent;
 
             timer.Start();
@@ -67,6 +65,34 @@ namespace ProcessAlerter
         private static void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
         {
             _logger.Debug("Event handler started");
+            var tokenSource = new System.Threading.CancellationTokenSource();
+            try
+            {
+                tokenSource.CancelAfter(TimeSpan.FromMilliseconds(_timerInterval));
+
+                new System.Threading.Tasks.Task(
+                    () =>
+                    {
+                        CheckProcesses();
+                        tokenSource.Token.ThrowIfCancellationRequested();
+                        return;
+                    },
+                    tokenSource.Token).Wait();
+            }
+            catch (AggregateException)
+            {
+                _logger.Error("Timespan exceeded checking the health of running processes. Verify WMI is A-OK and things aren't otherwise stacked up on this server.");
+            }
+            finally
+            {
+                tokenSource.Dispose();
+            }
+            timer.Start();
+            _logger.Debug("Event handler completed");
+        }
+
+        private static void CheckProcesses()
+        {
             _logger.Debug("outtaControls: " + outtaControls.Count);
             try
             {
@@ -121,8 +147,6 @@ namespace ProcessAlerter
             {
                 _logger.Warn(String.Concat("Import monitor failed with error: ", ex.ToString()));
             }
-
-            _logger.Debug("Event handler completed");
         }
 
         private static List<Process> GetProcesses()
